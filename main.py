@@ -1,4 +1,5 @@
-import sys
+import queue
+import time
 
 import pygame
 
@@ -6,130 +7,170 @@ from constants import *
 
 pygame.init()
 surface = pygame.display.set_mode((WIDTH, WIDTH))
-pygame.display.set_caption("NO MODE SET")
-start_pos = None
-end_pos = None
-obstacles = set()
-start_flag = False
-end_flag = False
-obstacle_flag = False
+
+start = time.time()
+startPosition, endPosition = None, None
+obstacles = set()  # set to avoid duplicate coordinates
+visitedPaths = set()
+mode = 0
+positionQueue = queue.Queue()
+selectedMouseButton = None
 
 
-def set_stage():
-    surface.fill(WHITE)
-    for i in range(ROWS):
-        pygame.draw.line(surface, BLACK, (0, i * rect_width), (WIDTH, i * rect_width))
-        pygame.draw.line(surface, BLACK, (i * rect_width, 0), (i * rect_width, WIDTH))
-    pygame.display.update()
+def setMode(modeNumber):
+    global mode
+    mode = modeNumber
+    pygame.display.set_caption(MODE_ARRAY[modeNumber])
 
 
-def get_tile(mouse):
-    x = (mouse[0] // rect_width) * rect_width
-    y = (mouse[1] // rect_width) * rect_width
-    return int(x), int(y)
+def handleMouseButtonDown(mouseMode):
+    # mouseMode 1 for paint, 3 for erase
+    global startPosition, endPosition, obstacles
+
+    rectX, rectY = getMouseRectPosition(pygame.mouse.get_pos())
+    if mouseMode == 1:
+        if mode == 1:
+            startPosition = (rectX, rectY)
+        elif mode == 2:
+            endPosition = (rectX, rectY)
+        elif mode == 3:
+            obstacles.add((rectX, rectY))
+    else:
+        erasePosition = (rectX, rectY)
+        if mode == 1 and startPosition == erasePosition:
+            startPosition = None
+        elif mode == 2 and endPosition == erasePosition:
+            endPosition = None
+        elif mode == 3 and erasePosition in obstacles:
+            obstacles.remove(erasePosition)
+    init()
 
 
-def get_neighbours(home_position):
-    neighbours = set()
-    for i in range(2):
-        for j in range(2):
-            x = home_position[0] + i * rect_width
-            y = home_position[1] + j * rect_width
-            if (not (0 <= x <= WIDTH - rect_width and 0 <= y <= WIDTH - rect_width)) or (x, y) in obstacles:
-                continue
-            else:
-                neighbours.add((x, y))
+def handleMouseMove(mouseMode):
+    rectX, rectY = getMouseRectPosition(pygame.mouse.get_pos())
+
+    global startPosition, endPosition, obstacles
+
+    if mouseMode == 1:
+        if mode == 3:
+            obstacles.add((rectX, rectY))
+        init()
+    else:
+        if mode == 1 and (rectX, rectY) == startPosition:
+            startPosition = None
+        elif mode == 2 and (rectX, rectY) == endPosition:
+            endPosition = None
+        elif mode == 3 and (rectX, rectY) in obstacles:
+            obstacles.remove((rectX, rectY))
+        init()
+
+
+def getMouseRectPosition(mousePosition):
+    return int((mousePosition[0] // RECT_WIDTH) * RECT_WIDTH), int((mousePosition[1] // RECT_WIDTH) * RECT_WIDTH)
+
+
+def getNeighbours(position):
+    xArray = [0, 0, 1, -1]
+    yArray = [1, -1, 0, 0]
+
+    neighbours = []
+    for i in range(4):
+        testPosition = (position[0] + xArray[i] * RECT_WIDTH, position[1] + yArray[i] * RECT_WIDTH)
+        flag1 = 0 <= testPosition[0] < WIDTH and 0 <= testPosition[1] < WIDTH
+        flag2 = testPosition not in obstacles
+        flag3 = False if any(
+            element[1] == testPosition for element in visitedPaths) else True  # to eliminate visited cells
+        if flag1 and flag2 and flag3:
+            neighbours.append(testPosition)
     return neighbours
 
 
-def get_distance(current_pos):
-    return abs(current_pos[0] - end_pos[0]) + abs(current_pos[1] - end_pos[1])
+def init():
+    setMode(mode)
+
+    surface.fill(WHITE)
+    for i in range(ROWS):
+        pygame.draw.line(surface, BLACK, (0, i * RECT_WIDTH), (WIDTH, i * RECT_WIDTH))
+        pygame.draw.line(surface, BLACK, (i * RECT_WIDTH, 0), (i * RECT_WIDTH, WIDTH))
+
+    if startPosition is not None:
+        pygame.draw.rect(surface, RED,
+                         [startPosition[0] + 1, startPosition[1] + 1, RECT_WIDTH - 1, RECT_WIDTH - 1])
+    if endPosition is not None:
+        pygame.draw.rect(surface, BLUE,
+                         [endPosition[0] + 1, endPosition[1] + 1, RECT_WIDTH - 1, RECT_WIDTH - 1])
+    for element in obstacles:
+        pygame.draw.rect(surface, BLACK,
+                         [element[0] + 1, element[1] + 1, RECT_WIDTH - 1, RECT_WIDTH - 1])
+    pygame.display.update()
 
 
-def solve():
-    pass  # have to complete the algorithm
+# using breadth-first algorithm
+def findPath():
+    global positionQueue
+
+    while not positionQueue.empty():
+        time.sleep(1 / SPEED)
+        testPosition = positionQueue.get()
+        if testPosition == endPosition:
+            reconstructPath()
+            return
+        neighbours = getNeighbours(testPosition)
+        for neighbour in neighbours:
+            visitedPaths.add((testPosition, neighbour))
+            positionQueue.put(neighbour)
+            pygame.draw.rect(surface, GREEN,
+                             [neighbour[0] + 1, neighbour[1] + 1, RECT_WIDTH - 1, RECT_WIDTH - 1])
+        pygame.display.update()
 
 
-set_stage()
-while True:
+def reconstructPath():
+    init()  # clear the previous colors of processing and plot start, end and obstacle positions
+
+    global visitedPaths, flag
+    currentPosition = endPosition
+    while currentPosition != startPosition:
+        for element in visitedPaths:
+            if element[1] == currentPosition:
+                currentPosition = element[0]
+                break
+        pygame.draw.rect(surface, TEAL,
+                         [currentPosition[0] + 1, currentPosition[1] + 1, RECT_WIDTH - 1, RECT_WIDTH - 1])
+    pygame.draw.rect(surface, RED,
+                     [currentPosition[0] + 1, currentPosition[1] + 1, RECT_WIDTH - 1, RECT_WIDTH - 1])
+    pygame.display.update()
+
+
+init()
+flag = True
+while flag:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
-            sys.exit(0)
+            flag = False
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_1:
-                if not start_flag:
-                    pygame.display.set_caption('SET START POSITION')
-                    start_flag = True
-                    end_flag = False
-                    obstacle_flag = False
-                else:
-                    pygame.display.set_caption("NO MODE SET")
-                    start_flag = False
-            elif event.key == pygame.K_3:
-                if not end_flag:
-                    pygame.display.set_caption('SET END POSITION')
-                    end_flag = True
-                    start_flag = False
-                    obstacle_flag = False
-                else:
-                    pygame.display.set_caption("NO MODE SET")
-                    end_flag = False
+                setMode(1)
             elif event.key == pygame.K_2:
-                if not obstacle_flag:
-                    pygame.display.set_caption('SET OBSTACLES')
-                    obstacle_flag = True
-                    start_flag = False
-                    end_flag = False
-                else:
-                    pygame.display.set_caption("NO MODE SET")
-                    obstacle_flag = False
+                setMode(2)
+            elif event.key == pygame.K_3:
+                setMode(3)
             elif event.key == pygame.K_SPACE:
-                if not (start_pos is None or end_pos is None):
-                    solve()
-                else:
-                    pygame.display.set_caption('PLEASE SET START AND END POSITIONS FIRST!')
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            # noinspection DuplicatedCode
-            if start_flag:
-                if start_pos is not None:
-                    pygame.draw.rect(surface, WHITE,
-                                     [start_pos[0] + 1, start_pos[1] + 1, rect_width - 1, rect_width - 1])
-                    start_pos = get_tile(pygame.mouse.get_pos())
-                    pygame.draw.rect(surface, RED, [start_pos[0] + 1, start_pos[1] + 1, rect_width - 1, rect_width - 1])
-                else:
-                    start_pos = get_tile(pygame.mouse.get_pos())
-                    pygame.draw.rect(surface, RED,
-                                     [start_pos[0] + 1, start_pos[1] + 1, rect_width - 1, rect_width - 1])
-                pygame.display.update()
-            elif end_flag:
-                if end_pos is not None:
-                    pygame.draw.rect(surface, WHITE,
-                                     [end_pos[0] + 1, end_pos[1] + 1, rect_width - 1, rect_width - 1])
-                    end_pos = get_tile(pygame.mouse.get_pos())
-                    pygame.draw.rect(surface, BLUE, [end_pos[0] + 1, end_pos[1] + 1, rect_width - 1, rect_width - 1])
-                else:
-                    end_pos = get_tile(pygame.mouse.get_pos())
-                    pygame.draw.rect(surface, BLUE,
-                                     [end_pos[0] + 1, end_pos[1] + 1, rect_width - 1, rect_width - 1])
-                pygame.display.update()
-            elif obstacle_flag:
-                run_flag = True
-                while run_flag:
-                    for event1 in pygame.event.get():
-                        if event1.type == pygame.QUIT:
-                            pygame.quit()
-                            sys.exit(0)
-                        if event1.type == pygame.MOUSEBUTTONUP:
-                            run_flag = False
-                    position = get_tile(pygame.mouse.get_pos())
-                    if not ((position == start_pos) or (position == end_pos)):
-                        obstacles.add(position)
-                        pygame.draw.rect(surface, BLACK, [position[0], position[1], rect_width, rect_width])
-                        pygame.display.update()
-            if event.button == 3:  # right mouse button click
-                position = get_tile(pygame.mouse.get_pos())
-                if position in obstacles:
-                    obstacles.remove(position)
-                    pygame.draw.rect(surface, WHITE, [position[0] + 1, position[1] + 1, rect_width - 1, rect_width - 1])
-                    pygame.display.update()
+                if not (startPosition is None or endPosition is None):
+                    positionQueue.put(startPosition)
+                    findPath()
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                selectedMouseButton = 1
+                handleMouseButtonDown(1)
+            elif event.button == 3:
+                selectedMouseButton = 3
+                handleMouseButtonDown(3)
+        elif event.type == pygame.MOUSEMOTION:
+            if selectedMouseButton is not None:
+                handleMouseMove(selectedMouseButton)
+        elif event.type == pygame.MOUSEBUTTONUP:
+            selectedMouseButton = None
+            init()
+
+print('time taken: ', time.time() - start)
