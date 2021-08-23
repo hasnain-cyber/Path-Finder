@@ -8,7 +8,6 @@ from constants import *
 pygame.init()
 surface = pygame.display.set_mode((WIDTH, WIDTH))
 
-start = time.time()
 startPosition, endPosition = None, None
 obstacles = set()  # set to avoid duplicate coordinates
 visitedPaths = set()
@@ -172,5 +171,3 @@ while flag:
         elif event.type == pygame.MOUSEBUTTONUP:
             selectedMouseButton = None
             init()
-
-print('time taken: ', time.time() - start)
